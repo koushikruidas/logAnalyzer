@@ -52,6 +52,7 @@ public class LogPatternController {
     public ResponseEntity<LogPatternDTO> updateLogPattern(@PathVariable Long id, @RequestBody LogPatternDTO logPatternDTO) {
         return logPatternRepository.findById(id).map(existingPattern -> {
             modelMapper.map(logPatternDTO, existingPattern);
+            existingPattern.setId(id); // Ensure ID remains unchanged
             LogPattern updatedPattern = logPatternRepository.save(existingPattern);
             return ResponseEntity.ok(modelMapper.map(updatedPattern, LogPatternDTO.class));
         }).orElse(ResponseEntity.notFound().build());
