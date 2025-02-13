@@ -1,0 +1,54 @@
+package com.poinciana.loganalyzer.controller;
+
+import com.poinciana.loganalyzer.entity.LogEntry;
+import com.poinciana.loganalyzer.entity.LogEntryDocument;
+import com.poinciana.loganalyzer.service.LogService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.elasticsearch.core.SearchHits;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/logs")
+@RequiredArgsConstructor
+public class LogController {
+
+    private final LogService logService;
+
+    @PostMapping("/ingest")
+    public ResponseEntity<LogEntry> ingestDocumentLog(@RequestBody String rawLog, @RequestParam(required = false) Long patternId) {
+        return new ResponseEntity<>(logService.ingestLog(rawLog, patternId), HttpStatus.OK);
+    }
+
+    @GetMapping
+    public List<LogEntry> getAllLogs() {
+        return logService.getAllLogs();
+    }
+
+    @GetMapping("/fileterdLogs")
+    public List<LogEntry> getFilteredLogs(
+            @RequestParam(required = false) String level,
+            @RequestParam(required = false) String serviceName,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate) {
+        return logService.getFilteredLogs(level, serviceName, startDate, endDate);
+    }
+
+    @GetMapping("/search")
+    public ResponseEntity<SearchHits<LogEntryDocument>> searchLogs(
+            @RequestParam(required = false) String level,
+            @RequestParam(required = false) String serviceName,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) LocalDateTime startDate,
+            @RequestParam(required = false) LocalDateTime endDate,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return ResponseEntity.ok(logService.searchLogs(level, serviceName, keyword, startDate, endDate, page, size));
+    }
+}
+
