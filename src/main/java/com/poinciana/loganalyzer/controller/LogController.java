@@ -2,6 +2,7 @@ package com.poinciana.loganalyzer.controller;
 
 import com.poinciana.loganalyzer.entity.LogEntry;
 import com.poinciana.loganalyzer.entity.LogEntryDocument;
+import com.poinciana.loganalyzer.model.LogSearchResponseDTO;
 import com.poinciana.loganalyzer.service.LogService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.elasticsearch.core.SearchHits;
@@ -40,12 +41,14 @@ public class LogController {
     }
 
     @GetMapping("/search")
-    public ResponseEntity<SearchHits<LogEntryDocument>> searchLogs(
+    public ResponseEntity<LogSearchResponseDTO> searchLogs(
             @RequestParam(required = false) String level,
             @RequestParam(required = false) String serviceName,
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) LocalDateTime startDate,
-            @RequestParam(required = false) LocalDateTime endDate,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
         return ResponseEntity.ok(logService.searchLogs(level, serviceName, keyword, startDate, endDate, page, size));

@@ -26,7 +26,8 @@ public class LogParserService {
 
         try {
             JsonNode jsonNode = objectMapper.readTree(rawLog);
-            logEntry.setTimestamp(LocalDateTime.parse(jsonNode.get("timestamp").asText()));
+            logEntry.setTimestamp(LocalDateTime.parse(jsonNode.get("timestamp").asText(),
+                    DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")));
             logEntry.setLevel(jsonNode.get("level").asText());
             logEntry.setServiceName(jsonNode.get("serviceName").asText());
             logEntry.setMessage(jsonNode.get("message").asText());
@@ -47,10 +48,11 @@ public class LogParserService {
             Matcher matcher = logPattern.matcher(rawLog);
 
             if (matcher.matches()) {
-                logEntry.setTimestamp(LocalDateTime.parse(matcher.group(1), DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-                logEntry.setLevel(matcher.group(2));
-                logEntry.setServiceName(matcher.group(3));
-                logEntry.setMessage(matcher.group(4));
+                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+                logEntry.setTimestamp(LocalDateTime.parse(matcher.group(1), formatter));
+                logEntry.setLevel(matcher.group(3));
+                logEntry.setServiceName(matcher.group(4));
+                logEntry.setMessage(matcher.group(5));
             }
         }
 

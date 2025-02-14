@@ -6,12 +6,16 @@ import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import com.poinciana.loganalyzer.entity.LogEntry;
 import com.poinciana.loganalyzer.entity.LogEntryDocument;
+import com.poinciana.loganalyzer.model.LogEntryDTO;
+import com.poinciana.loganalyzer.model.LogSearchResponseDTO;
 import com.poinciana.loganalyzer.repository.LogEntryElasticsearchRepository;
 import com.poinciana.loganalyzer.repository.LogEntryRepository;
 import lombok.RequiredArgsConstructor;
+import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
+import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHits;
 import org.springframework.data.elasticsearch.core.query.Criteria;
 import org.springframework.data.elasticsearch.core.query.CriteriaQuery;
@@ -23,6 +27,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 
 @Service
@@ -35,6 +40,7 @@ public class LogService {
     private final LogEntryRepository logEntryRepository;
     private final LogParserService logParserService;
     private final ElasticsearchClient elasticsearchClient;
+    private final ModelMapper modelMapper;
 
     @Transactional
     public LogEntry ingestLog(String rawLog, Long patternId) {
@@ -65,8 +71,8 @@ public class LogService {
         return logEntryRepository.findFilteredLogs(level, serviceName, startDate, endDate);
     }
 
-    public SearchHits<LogEntryDocument> searchLogs(String level, String serviceName, String keyword,
-                                             LocalDateTime startDate, LocalDateTime endDate, int page, int size) {
+    public LogSearchResponseDTO searchLogs(String level, String serviceName, String keyword,
+                                           LocalDateTime startDate, LocalDateTime endDate, int page, int size) {
         Criteria criteria = new Criteria();
 
         if (level != null) {
@@ -76,16 +82,21 @@ public class LogService {
             criteria.and(Criteria.where("serviceName").is(serviceName));
         }
         if (keyword != null) {
-            criteria.and(Criteria.where("message").contains(keyword));
+            criteria.and(Criteria.where("message").is(keyword));
         }
         if (startDate != null && endDate != null) {
             criteria.and(Criteria.where("timestamp").between(startDate, endDate));
         }
 
         CriteriaQuery query = new CriteriaQuery(criteria).setPageable(PageRequest.of(page, size));
+        SearchHits<LogEntryDocument> searchHits = elasticsearchOperations.search(query, LogEntryDocument.class);
 
+        List<LogEntryDTO> logEntries = searchHits.getSearchHits().stream()
+                .map(SearchHit::getContent)
+                .map(log -> modelMapper.map(log, LogEntryDTO.class))
+                .collect(Collectors.toList());
 
-        return elasticsearchOperations.search(query, LogEntryDocument.class);
+        return new LogSearchResponseDTO(logEntries, searchHits.getTotalHits());
     }
 
     public Map<String, Long> getLogCountByLevel() throws IOException {
