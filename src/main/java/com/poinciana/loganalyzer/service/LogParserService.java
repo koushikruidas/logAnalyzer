@@ -136,7 +136,28 @@ public class LogParserService {
         logEntryDTO.setTimestamp(LocalDateTime.parse((String) capture.get("timestamp"), TIMESTAMP_FORMATTER));
         logEntryDTO.setLevel((String) capture.get("level"));
         logEntryDTO.setServiceName((String) capture.get("serviceName"));
-        logEntryDTO.setMessage((String) capture.get("message"));
+
+        // Handle multi-line messages
+        if (capture.containsKey("message")) {
+            String message = (String) capture.get("message");
+            if (rawLog.contains("\n")) {
+                int messageStartIndex = rawLog.indexOf(message);
+                if (messageStartIndex != -1) {
+                    StringBuilder fullMessage = new StringBuilder();
+                    fullMessage.append(rawLog.substring(messageStartIndex)); // Capture entire message
+
+                    message = fullMessage.toString(); // Convert back to String if needed
+                }
+            }
+
+            // Check if message contains structured log details or stack traces
+            if (isStackTrace(message)) {
+                logEntryDTO.setException(message);
+            } else {
+                logEntryDTO.setMessage(message);
+            }
+        }
+
         // Store thread, IP, and other metadata dynamically
         capture.forEach((key, value) -> {
             if (!key.equals("timestamp") && !key.equals("level") && !key.equals("serviceName") && !key.equals("message")) {
@@ -154,4 +175,12 @@ public class LogParserService {
         return value != null ? value.toString() : null;
     }
 
+    /**
+     * Helper method to determine if a message is a stack trace.
+     */
+    private boolean isStackTrace(String message) {
+        // Stack traces typically contain lines starting with "at" or "Caused by"
+        return message.lines()
+                .anyMatch(line -> line.trim().startsWith("at ") || line.trim().startsWith("Caused by:"));
+    }
 }
