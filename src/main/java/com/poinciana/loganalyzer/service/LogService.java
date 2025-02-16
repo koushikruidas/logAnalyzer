@@ -22,9 +22,13 @@ import org.springframework.data.elasticsearch.core.query.Criteria;
 import org.springframework.data.elasticsearch.core.query.CriteriaQuery;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -129,6 +133,51 @@ public class LogService {
 
         return result;
     }
+    @Transactional
+    public List<LogEntryDTO> ingestLogFile(MultipartFile file, Long patternId) {
+        List<LogEntryDTO> logEntries = new ArrayList<>();
 
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream()))) {
+            StringBuilder logBuilder = new StringBuilder();
+            String currentLine, nextLine = reader.readLine();
+
+            while ((currentLine = nextLine) != null) {
+                nextLine = reader.readLine();
+                if (currentLine.trim().isEmpty()) {
+                    continue; // Skip empty lines
+                }
+
+                logBuilder.append(currentLine).append("\n");
+
+                // Check if it's the end of a log entry (customize this logic if needed)
+                if (isEndOfLogEntry(nextLine)) {
+                    String rawLog = logBuilder.toString().trim();
+                    logEntries.add(ingestLog(rawLog, patternId));
+                    logBuilder.setLength(0); // Clear buffer for next log
+                }
+            }
+
+            // Process last remaining log entry if any
+            if (!logBuilder.isEmpty()) {
+                logEntries.add(ingestLog(logBuilder.toString().trim(), patternId));
+            }
+
+        } catch (IOException e) {
+            throw new RuntimeException("Error reading log file", e);
+        }
+
+        // ✅ **Bulk insert into Elasticsearch here**
+        if (!logEntries.isEmpty()) {
+            logEntryElasticsearchRepository.saveAll(logEntries.stream()
+                    .map(dto -> modelMapper.map(dto, LogEntryDocument.class))
+                    .collect(Collectors.toList()));
+        }
+
+        return logEntries;
+    }
+
+    private boolean isEndOfLogEntry(String nextLine) {
+        return nextLine != null && nextLine.trim().matches("^\\d{4}-\\d{2}-\\d{2}.*");
+    }
 }
 

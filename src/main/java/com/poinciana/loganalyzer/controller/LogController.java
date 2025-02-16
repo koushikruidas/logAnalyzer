@@ -11,6 +11,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -54,5 +55,12 @@ public class LogController {
             @RequestParam(defaultValue = "10") int size) {
         return ResponseEntity.ok(logService.searchLogs(level, serviceName, keyword, startDate, endDate, page, size));
     }
+
+    @PostMapping("/ingest-file")
+    public ResponseEntity<List<LogEntryDTO>> ingestLogFile(@RequestParam("file") MultipartFile file,
+                                                           @RequestParam(required = false) Long patternId) {
+        return new ResponseEntity<>(logService.ingestLogFile(file, patternId), HttpStatus.OK);
+    }
+
 }
 
