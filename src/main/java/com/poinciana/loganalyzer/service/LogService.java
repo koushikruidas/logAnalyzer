@@ -13,6 +13,7 @@ import com.poinciana.loganalyzer.repository.LogEntryRepository;
 import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.SearchHit;
@@ -36,6 +37,9 @@ public class LogService {
     @Autowired(required = false)
     private LogEntryElasticsearchRepository logEntryElasticsearchRepository;
 
+    @Value("${log.persistence.enableRelationalDB}")
+    private boolean enableRelationalDB;
+
     private final ElasticsearchOperations elasticsearchOperations;
     private final LogEntryRepository logEntryRepository;
     private final LogParserService logParserService;
@@ -43,24 +47,21 @@ public class LogService {
     private final ModelMapper modelMapper;
 
     @Transactional
-    public LogEntry ingestLog(String rawLog, Long patternId) {
+    public LogEntryDTO ingestLog(String rawLog, Long patternId) {
         // Parse the log
-        LogEntry logEntry = logParserService.parseLog(rawLog, patternId);
-        logEntry = logEntryRepository.save(logEntry);
+        LogEntryDTO logEntryDTO = logParserService.grokLogParser(rawLog,patternId);
 
+        LogEntry logEntry = modelMapper.map(logEntryDTO, LogEntry.class);
+        LogEntryDocument entryDocument = modelMapper.map(logEntryDTO, LogEntryDocument.class);
+
+        if (enableRelationalDB) {
+            logEntry.setId(logEntryDTO.getId() != null ? Long.parseLong(logEntryDTO.getId()) : null);
+            logEntryRepository.save(logEntry);
+        }
         // Save log in Elasticsearch
-        LogEntryDocument logEntryDocument = LogEntryDocument.builder()
-                .id(logEntry.getId().toString())
-                .timestamp(logEntry.getTimestamp())
-                .level(logEntry.getLevel())
-                .serviceName(logEntry.getServiceName())
-                .message(logEntry.getMessage())
-                .exception(logEntry.getException())
-                .rawLog(logEntry.getRawLog())
-                .build();
-        logEntryElasticsearchRepository.save(logEntryDocument);
-
-        return logEntry;
+        LogEntryDocument save = logEntryElasticsearchRepository.save(entryDocument);
+        logEntryDTO.setId(save.getId());
+        return logEntryDTO;
     }
 
     public List<LogEntry> getAllLogs() {

@@ -47,10 +47,6 @@ public class ElasticsearchConfig {
         RestClientTransport transport = new RestClientTransport(restClient, new JacksonJsonpMapper());
         return new ElasticsearchClient(transport);
     }
-    @Bean
-    public ModelMapper modelMapper() {
-        return new ModelMapper();
-    }
 
     /**
      * This bean is to conver Epoch time to LocalDateTime.

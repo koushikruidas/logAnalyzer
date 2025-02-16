@@ -20,7 +20,7 @@
         </encoder>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <!-- Log filename pattern with date-time -->
-            <fileNamePattern>logs/application-%d{yyyy-MM-dd}.log</fileNamePattern>
+            <fileNamePattern>logs/logAnalyzer-%d{yyyy-MM-dd}.log</fileNamePattern>
             <!-- Retain logs for 7 days -->
             <maxHistory>2</maxHistory>
             <!-- Optionally compress old logs -->

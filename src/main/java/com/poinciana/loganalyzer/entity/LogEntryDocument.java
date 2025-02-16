@@ -11,6 +11,7 @@ import org.springframework.data.elasticsearch.annotations.Field;
 import org.springframework.data.elasticsearch.annotations.FieldType;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @Document(indexName = "log_entries")
 @Data
@@ -37,4 +38,11 @@ public class LogEntryDocument {
 
     @Field(type = FieldType.Text)
     private String rawLog;
+
+    /**
+     * This field will store log-specific fields dynamically
+     * (e.g., IP Address, Thread Name, HTTP Method, etc.)
+     */
+    @Field(type = FieldType.Object)
+    private Map<String, Object> metadata;
 }

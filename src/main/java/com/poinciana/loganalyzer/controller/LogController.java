@@ -2,6 +2,7 @@ package com.poinciana.loganalyzer.controller;
 
 import com.poinciana.loganalyzer.entity.LogEntry;
 import com.poinciana.loganalyzer.entity.LogEntryDocument;
+import com.poinciana.loganalyzer.model.LogEntryDTO;
 import com.poinciana.loganalyzer.model.LogSearchResponseDTO;
 import com.poinciana.loganalyzer.service.LogService;
 import lombok.RequiredArgsConstructor;
@@ -22,7 +23,7 @@ public class LogController {
     private final LogService logService;
 
     @PostMapping("/ingest")
-    public ResponseEntity<LogEntry> ingestDocumentLog(@RequestBody String rawLog, @RequestParam(required = false) Long patternId) {
+    public ResponseEntity<LogEntryDTO> ingestDocumentLog(@RequestBody String rawLog, @RequestParam(required = false) Long patternId) {
         return new ResponseEntity<>(logService.ingestLog(rawLog, patternId), HttpStatus.OK);
     }
 
