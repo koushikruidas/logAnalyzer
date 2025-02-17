@@ -50,6 +50,9 @@ public class LogService {
     @Value("${log.persistence.enableRelationalDB}")
     private boolean enableRelationalDB;
 
+    @Value("${log.ingest.batch-size}")
+    private int batchSize;
+
     private final ElasticsearchOperations elasticsearchOperations;
     private final LogEntryRepository logEntryRepository;
     private final LogParserService logParserService;
@@ -151,6 +154,7 @@ public class LogService {
     @Transactional
     public List<LogEntryDTO> ingestLogFile(MultipartFile file, Long patternId) {
         List<LogEntryDTO> logEntries = new ArrayList<>();
+        List<LogEntryDocument> batchDocuments = new ArrayList<>(batchSize);
 
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream()))) {
             StringBuilder logBuilder = new StringBuilder();
@@ -167,29 +171,55 @@ public class LogService {
                 // Check if it's the end of a log entry (customize this logic if needed)
                 if (isEndOfLogEntry(nextLine)) {
                     String rawLog = logBuilder.toString().trim();
-                    logEntries.add(createLogEntryDTO(rawLog, patternId));
+                    try {
+                        LogEntryDTO logEntryDTO = createLogEntryDTO(rawLog, patternId);
+                        logEntries.add(logEntryDTO);
+                        batchDocuments.add(modelMapper.map(logEntryDTO, LogEntryDocument.class));
+
+                        // Process batch if it reaches the batch size
+                        if (batchDocuments.size() >= batchSize) {
+                            saveBatch(batchDocuments);
+                            batchDocuments.clear(); // Clear the batch for the next set
+                        }
+                    } catch (Exception e) {
+                        logger.error("Failed to process log entry: " + rawLog, e);
+                        // Continue processing the next log entry
+                    }
                     logBuilder.setLength(0); // Clear buffer for next log
                 }
             }
 
             // Process last remaining log entry if any
             if (!logBuilder.isEmpty()) {
-                logEntries.add(createLogEntryDTO(logBuilder.toString().trim(), patternId));
+                try {
+                    String rawLog = logBuilder.toString().trim();
+                    LogEntryDTO logEntryDTO = createLogEntryDTO(rawLog, patternId);
+                    logEntries.add(logEntryDTO);
+                    batchDocuments.add(modelMapper.map(logEntryDTO, LogEntryDocument.class));
+                } catch (Exception e) {
+                    logger.error("Failed to process log entry: " + logBuilder.toString().trim(), e);
+                }
+            }
+
+            // Process any remaining entries in the last batch
+            if (!batchDocuments.isEmpty()) {
+                saveBatch(batchDocuments);
             }
 
         } catch (IOException e) {
             throw new RuntimeException("Error reading log file", e);
         }
 
-        // Bulk insert into Elasticsearch
-        if (!logEntries.isEmpty()) {
-            List<LogEntryDocument> documents = logEntries.parallelStream()
-                    .map(dto -> modelMapper.map(dto, LogEntryDocument.class))
-                    .collect(Collectors.toList());
-            logEntryElasticsearchRepository.saveAll(documents);
-        }
-
         return logEntries;
+    }
+
+    private void saveBatch(List<LogEntryDocument> batchDocuments) {
+        try {
+            logEntryElasticsearchRepository.saveAll(batchDocuments);
+        } catch (Exception e) {
+            logger.error("Failed to save batch to Elasticsearch", e);
+            // Optionally, log the failed batch for later retry
+        }
     }
 
     private LogEntryDTO createLogEntryDTO(String rawLog, Long patternId) {
