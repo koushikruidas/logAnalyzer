@@ -2,6 +2,8 @@ package com.poinciana.loganalyzer.service;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.aggregations.Aggregation;
+import co.elastic.clients.elasticsearch.core.BulkRequest;
+import co.elastic.clients.elasticsearch.core.BulkResponse;
 import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import com.poinciana.loganalyzer.entity.LogEntry;
@@ -11,7 +13,6 @@ import com.poinciana.loganalyzer.model.LogSearchResponseDTO;
 import com.poinciana.loganalyzer.repository.LogEntryElasticsearchRepository;
 import com.poinciana.loganalyzer.repository.LogEntryRepository;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,10 +34,10 @@ import java.io.InputStreamReader;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 @Service
@@ -46,12 +47,16 @@ public class LogService {
     private final static Logger logger = LoggerFactory.getLogger(LogService.class);
     @Autowired(required = false)
     private LogEntryElasticsearchRepository logEntryElasticsearchRepository;
-
     @Value("${log.persistence.enableRelationalDB}")
     private boolean enableRelationalDB;
-
     @Value("${log.ingest.batch-size}")
     private int batchSize;
+    @Value("${log.ingest.enable-host-lookup:false}") // Configurable: Disable host lookup if needed
+    private boolean enableHostLookup;
+
+    private static final int THREAD_POOL_SIZE = Runtime.getRuntime().availableProcessors();
+    private final ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
+
 
     private final ElasticsearchOperations elasticsearchOperations;
     private final LogEntryRepository logEntryRepository;
@@ -153,7 +158,7 @@ public class LogService {
     }
     @Transactional
     public List<LogEntryDTO> ingestLogFile(MultipartFile file, Long patternId) {
-        List<LogEntryDTO> logEntries = new ArrayList<>();
+        List<CompletableFuture<LogEntryDTO>> futures = new ArrayList<>();
         List<LogEntryDocument> batchDocuments = new ArrayList<>(batchSize);
 
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream()))) {
@@ -162,58 +167,66 @@ public class LogService {
 
             while ((currentLine = nextLine) != null) {
                 nextLine = reader.readLine();
-                if (currentLine.trim().isEmpty()) {
-                    continue; // Skip empty lines
-                }
+                if (currentLine.trim().isEmpty()) continue; // Skip empty lines
 
                 logBuilder.append(currentLine).append("\n");
 
-                // Check if it's the end of a log entry (customize this logic if needed)
                 if (isEndOfLogEntry(nextLine)) {
                     String rawLog = logBuilder.toString().trim();
-                    try {
-                        LogEntryDTO logEntryDTO = createLogEntryDTO(rawLog, patternId);
-                        logEntries.add(logEntryDTO);
-                        batchDocuments.add(modelMapper.map(logEntryDTO, LogEntryDocument.class));
+                    futures.add(parseAndStoreLog(rawLog, patternId, batchDocuments));
 
-                        // Process batch if it reaches the batch size
-                        if (batchDocuments.size() >= batchSize) {
-                            saveBatch(batchDocuments);
-                            batchDocuments.clear(); // Clear the batch for the next set
-                        }
-                    } catch (Exception e) {
-                        logger.error("Failed to process log entry: " + rawLog, e);
-                        // Continue processing the next log entry
+                    if (batchDocuments.size() >= adaptiveBatchSize()) {
+                        saveBulk(batchDocuments);
+                        batchDocuments.clear();
                     }
+
                     logBuilder.setLength(0); // Clear buffer for next log
                 }
             }
 
-            // Process last remaining log entry if any
+            // Process the last log entry
             if (!logBuilder.isEmpty()) {
-                try {
-                    String rawLog = logBuilder.toString().trim();
-                    LogEntryDTO logEntryDTO = createLogEntryDTO(rawLog, patternId);
-                    logEntries.add(logEntryDTO);
-                    batchDocuments.add(modelMapper.map(logEntryDTO, LogEntryDocument.class));
-                } catch (Exception e) {
-                    logger.error("Failed to process log entry: " + logBuilder.toString().trim(), e);
-                }
+                String rawLog = logBuilder.toString().trim();
+                futures.add(parseAndStoreLog(rawLog, patternId, batchDocuments));
             }
 
-            // Process any remaining entries in the last batch
+            // Wait for all parsing tasks to finish
+            List<LogEntryDTO> logEntries = futures.stream()
+                    .map(CompletableFuture::join)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+
+            // Save any remaining batch
             if (!batchDocuments.isEmpty()) {
-                saveBatch(batchDocuments);
+                saveBulk(batchDocuments);
             }
+
+            return logEntries;
 
         } catch (IOException e) {
             throw new RuntimeException("Error reading log file", e);
         }
-
-        return logEntries;
     }
 
-    private void saveBatch(List<LogEntryDocument> batchDocuments) {
+    private CompletableFuture<LogEntryDTO> parseAndStoreLog(String rawLog, Long patternId, List<LogEntryDocument> batchDocuments) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                LogEntryDTO logEntryDTO = logParserService.grokLogParser(rawLog, patternId);
+
+                if (enableHostLookup) {
+                    setHostDetails(logEntryDTO);
+                }
+
+                batchDocuments.add(modelMapper.map(logEntryDTO, LogEntryDocument.class));
+                return logEntryDTO;
+            } catch (Exception e) {
+                logger.error("Failed to process log entry: " + rawLog, e);
+                return null;
+            }
+        }, executor);
+    }
+
+    private void saveBulk(List<LogEntryDocument> batchDocuments) {
         try {
             logEntryElasticsearchRepository.saveAll(batchDocuments);
         } catch (Exception e) {
@@ -222,10 +235,7 @@ public class LogService {
         }
     }
 
-    private LogEntryDTO createLogEntryDTO(String rawLog, Long patternId) {
-        LogEntryDTO logEntryDTO = logParserService.grokLogParser(rawLog, patternId);
-
-        // Capture Host Details
+    private void setHostDetails(LogEntryDTO logEntryDTO) {
         try {
             InetAddress inetAddress = InetAddress.getLocalHost();
             logEntryDTO.setHostName(inetAddress.getHostName());
@@ -233,8 +243,11 @@ public class LogService {
         } catch (UnknownHostException e) {
             logger.warn("Failed to retrieve host details", e);
         }
+    }
 
-        return logEntryDTO;
+    private int adaptiveBatchSize() {
+        long freeMemory = Runtime.getRuntime().freeMemory();
+        return freeMemory < 100_000_000 ? batchSize / 2 : batchSize; // Reduce batch size if memory is low
     }
 
     private boolean isEndOfLogEntry(String nextLine) {
