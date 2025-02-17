@@ -167,28 +167,44 @@ public class LogService {
                 // Check if it's the end of a log entry (customize this logic if needed)
                 if (isEndOfLogEntry(nextLine)) {
                     String rawLog = logBuilder.toString().trim();
-                    logEntries.add(ingestLog(rawLog, patternId));
+                    logEntries.add(createLogEntryDTO(rawLog, patternId));
                     logBuilder.setLength(0); // Clear buffer for next log
                 }
             }
 
             // Process last remaining log entry if any
             if (!logBuilder.isEmpty()) {
-                logEntries.add(ingestLog(logBuilder.toString().trim(), patternId));
+                logEntries.add(createLogEntryDTO(logBuilder.toString().trim(), patternId));
             }
 
         } catch (IOException e) {
             throw new RuntimeException("Error reading log file", e);
         }
 
-        // ✅ **Bulk insert into Elasticsearch here**
+        // Bulk insert into Elasticsearch
         if (!logEntries.isEmpty()) {
-            logEntryElasticsearchRepository.saveAll(logEntries.stream()
+            List<LogEntryDocument> documents = logEntries.parallelStream()
                     .map(dto -> modelMapper.map(dto, LogEntryDocument.class))
-                    .collect(Collectors.toList()));
+                    .collect(Collectors.toList());
+            logEntryElasticsearchRepository.saveAll(documents);
         }
 
         return logEntries;
+    }
+
+    private LogEntryDTO createLogEntryDTO(String rawLog, Long patternId) {
+        LogEntryDTO logEntryDTO = logParserService.grokLogParser(rawLog, patternId);
+
+        // Capture Host Details
+        try {
+            InetAddress inetAddress = InetAddress.getLocalHost();
+            logEntryDTO.setHostName(inetAddress.getHostName());
+            logEntryDTO.setHostIp(inetAddress.getHostAddress());
+        } catch (UnknownHostException e) {
+            logger.warn("Failed to retrieve host details", e);
+        }
+
+        return logEntryDTO;
     }
 
     private boolean isEndOfLogEntry(String nextLine) {
