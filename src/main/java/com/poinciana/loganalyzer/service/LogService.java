@@ -11,7 +11,10 @@ import com.poinciana.loganalyzer.model.LogSearchResponseDTO;
 import com.poinciana.loganalyzer.repository.LogEntryElasticsearchRepository;
 import com.poinciana.loganalyzer.repository.LogEntryRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
@@ -27,6 +30,8 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -34,10 +39,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-
 @Service
 @RequiredArgsConstructor
 public class LogService {
+
+    private final static Logger logger = LoggerFactory.getLogger(LogService.class);
     @Autowired(required = false)
     private LogEntryElasticsearchRepository logEntryElasticsearchRepository;
 
@@ -54,6 +60,15 @@ public class LogService {
     public LogEntryDTO ingestLog(String rawLog, Long patternId) {
         // Parse the log
         LogEntryDTO logEntryDTO = logParserService.grokLogParser(rawLog,patternId);
+
+        // Capture Host Details
+        try {
+            InetAddress inetAddress = InetAddress.getLocalHost();
+            logEntryDTO.setHostName(inetAddress.getHostName());
+            logEntryDTO.setHostIp(inetAddress.getHostAddress());
+        } catch (UnknownHostException e) {
+            logger.warn("Failed to retrieve host details",e);
+        }
 
         LogEntry logEntry = modelMapper.map(logEntryDTO, LogEntry.class);
         LogEntryDocument entryDocument = modelMapper.map(logEntryDTO, LogEntryDocument.class);

@@ -39,6 +39,12 @@ public class LogEntryDocument {
     @Field(type = FieldType.Text)
     private String rawLog;
 
+    @Field(type = FieldType.Text)
+    private String hostName;
+
+    @Field(type = FieldType.Text)
+    private String hostIp;
+
     /**
      * This field will store log-specific fields dynamically
      * (e.g., IP Address, Thread Name, HTTP Method, etc.)

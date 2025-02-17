@@ -19,6 +19,8 @@ public class LogEntryDTO {
     private String message;
     private LocalDateTime timestamp;
     private String exception;
+    private String hostName;
+    private String hostIp;
     private String rawLog;
     private Map<String, Object> metadata;
 }
