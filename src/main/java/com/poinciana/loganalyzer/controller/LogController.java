@@ -1,12 +1,10 @@
 package com.poinciana.loganalyzer.controller;
 
 import com.poinciana.loganalyzer.entity.LogEntry;
-import com.poinciana.loganalyzer.entity.LogEntryDocument;
 import com.poinciana.loganalyzer.model.LogEntryDTO;
 import com.poinciana.loganalyzer.model.LogSearchResponseDTO;
 import com.poinciana.loganalyzer.service.LogService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.elasticsearch.core.SearchHits;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
