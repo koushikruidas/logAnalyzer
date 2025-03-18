@@ -2,6 +2,7 @@ package com.poinciana.loganalyzer.controller;
 
 import com.poinciana.loganalyzer.entity.ApiKey;
 import com.poinciana.loganalyzer.model.ApiKeyDTO;
+import com.poinciana.loganalyzer.model.RegistrationDTO;
 import com.poinciana.loganalyzer.model.ElasticAdminDTO;
 import com.poinciana.loganalyzer.model.KafkaAdminDTO;
 import com.poinciana.loganalyzer.repository.ApiKeyRepository;
@@ -27,13 +28,13 @@ public class AdminController {
     private final ModelMapper modelMapper;
 
     @PostMapping("/register")
-    public ResponseEntity<String> registerApplication(@RequestBody ApiKeyDTO apiKeyDTO) {
+    public ResponseEntity<String> registerApplication(@RequestBody RegistrationDTO registrationDTO) {
         String apiKey = UUID.randomUUID().toString();
-        String kafkaTopic = "logs." + apiKeyDTO.getApplicationName().toLowerCase();
-        String elasticIndex = apiKeyDTO.getApplicationName().toLowerCase() + "-logs";
+        String kafkaTopic = "logs." + registrationDTO.getApplicationName().toLowerCase();
+        String elasticIndex = registrationDTO.getApplicationName().toLowerCase() + "-logs";
 
         // Convert DTO to entity
-        ApiKey newApiKey = modelMapper.map(apiKeyDTO, ApiKey.class);
+        ApiKey newApiKey = modelMapper.map(registrationDTO, ApiKey.class);
         newApiKey.setApiKey(apiKey);
         newApiKey.setKafkaTopic(kafkaTopic);
         newApiKey.setElasticIndex(elasticIndex);
@@ -50,7 +51,7 @@ public class AdminController {
         elasticDTO.setIndexName(elasticIndex);
         elasticAdminService.createIndex(elasticDTO);
 
-        return ResponseEntity.ok("✅ Registered " + apiKeyDTO.getApplicationName() + " -> API Key: " + apiKey);
+        return ResponseEntity.ok("Registered " + registrationDTO.getApplicationName() + " -> API Key: " + apiKey);
     }
 
     /**
@@ -70,11 +71,11 @@ public class AdminController {
         } else if (appName != null && orgName != null) {
             apiKeyDetails = apiKeyRepository.findByApplicationNameAndOrganizationName(appName, orgName);
         } else {
-            return ResponseEntity.badRequest().body("❌ Provide either apiKey or both appName & orgName");
+            return ResponseEntity.badRequest().body("Provide either apiKey or both appName & orgName");
         }
 
         if (apiKeyDetails.isPresent()) {
-            return ResponseEntity.ok(apiKeyDetails.get()); // Return ApiKey on success
+            return ResponseEntity.ok(modelMapper.map(apiKeyDetails.get(), ApiKeyDTO.class)); // Return ApiKey on success
         } else {
             // Return an error object or a String with an error status
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("API Key not found");
