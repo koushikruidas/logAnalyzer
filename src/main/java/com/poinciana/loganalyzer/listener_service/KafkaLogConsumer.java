@@ -2,20 +2,26 @@ package com.poinciana.loganalyzer.listener_service;
 
 import com.poinciana.loganalyzer.entity.LogEntryDocument;
 import com.poinciana.loganalyzer.model.LogEntryDTO;
-import com.poinciana.loganalyzer.repository.LogEntryElasticsearchRepository;
 import com.poinciana.loganalyzer.service.LogParserService;
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.elasticsearch.client.elc.ElasticsearchTemplate;
+import org.springframework.data.elasticsearch.core.mapping.IndexCoordinates;
+import org.springframework.data.elasticsearch.core.query.IndexQuery;
+import org.springframework.data.elasticsearch.core.query.IndexQueryBuilder;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
+import org.springframework.kafka.support.KafkaHeaders;
+import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Service;
 
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -24,62 +30,72 @@ import java.util.concurrent.atomic.AtomicReference;
 public class KafkaLogConsumer {
 
     private final LogParserService logParserService;
-    private final LogEntryElasticsearchRepository logEntryElasticsearchRepository;
-    private final BlockingQueue<LogEntryDocument> logQueue;
+    private final BlockingQueue<LogEntryDTO> logQueue;
     private final ScheduledExecutorService bulkProcessor;
     private final ModelMapper mapper;
+    private final ElasticsearchTemplate elasticsearchTemplate;
 
     @Value("${spring.kafka.consumer.enableHostLookup:false}")
     private boolean enableHostLookup;
 
-    private String hostName;
-    private String hostIp;
+    @Value("${ORG_ID:logs}")
+    private String orgId;
 
     // Buffer to store the current log message being accumulated
     private final AtomicReference<StringBuilder> logBuffer = new AtomicReference<>(new StringBuilder());
 
 
-
-    public KafkaLogConsumer(LogParserService logParserService,
-                            LogEntryElasticsearchRepository logEntryElasticsearchRepository, ModelMapper mapper) {
+    public KafkaLogConsumer(LogParserService logParserService, ModelMapper mapper, ElasticsearchTemplate elasticsearchTemplate) {
         this.logParserService = logParserService;
-        this.logEntryElasticsearchRepository = logEntryElasticsearchRepository;
         this.mapper = mapper;
+        this.elasticsearchTemplate = elasticsearchTemplate;
         this.logQueue = new LinkedBlockingQueue<>(100_000); // High-capacity queue
         this.bulkProcessor = Executors.newScheduledThreadPool(1);
     }
 
     @PostConstruct
     public void init() {
-        if (enableHostLookup) {
-            try {
-                InetAddress inetAddress = InetAddress.getLocalHost();
-                this.hostName = inetAddress.getHostName();
-                this.hostIp = inetAddress.getHostAddress();
-            } catch (UnknownHostException e) {
-                log.warn("Failed to retrieve host details", e);
-            }
-        }
-
         // Schedule batch processing to Elasticsearch
         bulkProcessor.scheduleAtFixedRate(this::flushLogsToElasticsearch, 500, 500, TimeUnit.MILLISECONDS);
     }
 
+    @PreDestroy
+    public void shutdown() {
+        bulkProcessor.shutdown();
+        try {
+            if (!bulkProcessor.awaitTermination(5, TimeUnit.SECONDS)) {
+                bulkProcessor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            bulkProcessor.shutdownNow();
+        }
+    }
+
     @KafkaListener(
-        topics = "${spring.kafka.consumer.topic.single}",
-        groupId = "${spring.kafka.consumer.groupId}",
-        containerFactory = "kafkaListenerContainerFactory",
-        concurrency = "${spring.kafka.consumer.concurrency}"
+            topics = "#{@kafkaTopicResolver.getTopics()}", //Listens to all topics from an organization
+            groupId = "#{@kafkaGroupResolver.getGroupId()}",
+            containerFactory = "kafkaListenerContainerFactory",
+            concurrency = "${spring.kafka.consumer.concurrency}"
     )
-    public void consumeLogs(List<String> messages, Acknowledgment acknowledgment) {
+    public void consumeLogs(List<String> messages, @Header(KafkaHeaders.RECEIVED_TOPIC) String topic, Acknowledgment acknowledgment) {
+        String appName = topic.substring(orgId.length()+1);
+        String indexName = appName+"-logs";
         for (String message : messages) {
-            processLogMessage(message);
+            processLogMessage(message, indexName);
         }
 
         // After processing all the messages in the batch, if there's an accumulated log entry, process it
         if (!logBuffer.get().isEmpty()) {
-            parseAndQueueLog(logBuffer.get().toString());
+            parseAndQueueLog(logBuffer.get().toString(),indexName);
             logBuffer.set(new StringBuilder());  // Assigns a new empty StringBuilder
+        }
+
+        if (logQueue.size() > 90_000) {
+            log.warn("Log queue near capacity, slowing down Kafka consumption.");
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException ignored) {
+            }
         }
 
         // After processing all messages, acknowledge them
@@ -87,15 +103,14 @@ public class KafkaLogConsumer {
     }
 
     // Process each log message line
-    private void processLogMessage(String message) {
+    private void processLogMessage(String message, String indexName) {
         // Check if the message starts with a timestamp (this helps to identify a new log entry)
         if (isNewLogEntry(message)) {
             // If we are already buffering a previous log, process it first (flush it)
             if (!logBuffer.get().isEmpty()) {
-                parseAndQueueLog(logBuffer.get().toString());
-                logBuffer.set(new StringBuilder());  // Assigns a new empty StringBuilder
+                parseAndQueueLog(logBuffer.get().toString(), indexName);
+                logBuffer.get().setLength(0);  // it will update from beginning removing all old values.
             }
-
             // Reset the buffer for the new log entry
             logBuffer.set(new StringBuilder(message).append("\n"));
         } else {
@@ -109,16 +124,11 @@ public class KafkaLogConsumer {
         return message.matches("^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}.*");
     }
 
-    private void parseAndQueueLog(String rawLog) {
+    private void parseAndQueueLog(String rawLog, String indexName) {
         try {
             LogEntryDTO logEntryDTO = logParserService.grokLogParser(rawLog, null);
-
-            if (enableHostLookup) {
-                logEntryDTO.setHostName(hostName);
-                logEntryDTO.setHostIp(hostIp);
-            }
-
-            if (!logQueue.offer(mapper.map(logEntryDTO, LogEntryDocument.class), 50, TimeUnit.MILLISECONDS)) {
+            logEntryDTO.setIndexName(indexName);
+            if (!logQueue.offer(logEntryDTO, 50, TimeUnit.MILLISECONDS)) {
                 log.warn("Queue full, dropping log entry");
             }
         } catch (Exception e) {
@@ -129,12 +139,35 @@ public class KafkaLogConsumer {
     private void flushLogsToElasticsearch() {
         if (logQueue.isEmpty()) return;
 
-        List<LogEntryDocument> batch = new ArrayList<>();
+        List<LogEntryDTO> batch = new ArrayList<>();
+        Map<String, List<IndexQuery>> indexNameToQueries = new HashMap<>();
         logQueue.drainTo(batch, 1000); // Bulk processing 1000 at a time
 
         if (!batch.isEmpty()) {
-            logEntryElasticsearchRepository.saveAll(batch);
-            log.info("Saved {} logs to Elasticsearch", batch.size());
+            for (LogEntryDTO dto : batch) {
+                LogEntryDocument doc = mapper.map(dto, LogEntryDocument.class);
+
+                IndexQuery indexQuery = new IndexQueryBuilder()
+                        .withObject(doc)
+                        .build();
+                indexNameToQueries.computeIfAbsent(dto.getIndexName(), k -> new ArrayList<>()).add(indexQuery);
+            }
+            for (Map.Entry<String, List<IndexQuery>> entry : indexNameToQueries.entrySet()) {
+                String indexName = entry.getKey();
+                List<IndexQuery> queries = entry.getValue();
+                if (!queries.isEmpty()) {
+                    try {
+                        elasticsearchTemplate.bulkIndex(queries, IndexCoordinates.of(indexName));
+                        log.info("Saved {} logs to index '{}' using bulk API", queries.size(), indexName);
+                    } catch (Exception e) {
+                        log.error("Error during bulk indexing to index '{}'", indexName, e);
+                        // Handle specific index-related errors if needed
+                    } finally {
+                        // Clear the queries for this index after processing (success or failure)
+                        queries.clear(); // Clear the list of queries
+                    }
+                }
+            }
         }
     }
 

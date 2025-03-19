@@ -30,7 +30,7 @@ public class AdminController {
     @PostMapping("/register")
     public ResponseEntity<String> registerApplication(@RequestBody RegistrationDTO registrationDTO) {
         String apiKey = UUID.randomUUID().toString();
-        String kafkaTopic = "logs." + registrationDTO.getApplicationName().toLowerCase();
+        String kafkaTopic = registrationDTO.getOrganizationName()+ "_" + registrationDTO.getApplicationName().toLowerCase()+"_logs";
         String elasticIndex = registrationDTO.getApplicationName().toLowerCase() + "-logs";
 
         // Convert DTO to entity

@@ -22,5 +22,6 @@ public class LogEntryDTO {
     private String hostName;
     private String hostIp;
     private String rawLog;
+    private String indexName;
     private Map<String, Object> metadata;
 }
