@@ -17,9 +17,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.elasticsearch.client.elc.ElasticsearchTemplate;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHits;
+import org.springframework.data.elasticsearch.core.mapping.IndexCoordinates;
 import org.springframework.data.elasticsearch.core.query.Criteria;
 import org.springframework.data.elasticsearch.core.query.CriteriaQuery;
 import org.springframework.stereotype.Service;
@@ -60,6 +62,7 @@ public class LogService {
     private final LogEntryRepository logEntryRepository;
     private final LogParserService logParserService;
     private final ElasticsearchClient elasticsearchClient;
+    private final ElasticsearchTemplate elasticsearchTemplate;
     private final ModelMapper modelMapper;
 
     @Transactional
@@ -155,9 +158,11 @@ public class LogService {
         return result;
     }
     @Transactional
-    public List<LogEntryDTO> ingestLogFile(MultipartFile file, Long patternId) {
+    public List<LogEntryDTO> ingestLogFile(MultipartFile file, Long patternId, String indexName) {
         List<CompletableFuture<LogEntryDTO>> futures = new ArrayList<>();
         List<LogEntryDocument> batchDocuments = new ArrayList<>(batchSize);
+
+        ensureIndexExists(indexName); // Ensure index is created before processing logs
 
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream()))) {
             StringBuilder logBuilder = new StringBuilder();
@@ -174,7 +179,7 @@ public class LogService {
                     futures.add(parseAndStoreLog(rawLog, patternId, batchDocuments));
 
                     if (batchDocuments.size() >= adaptiveBatchSize()) {
-                        saveBulk(batchDocuments);
+                        saveBulk(batchDocuments, indexName);
                         batchDocuments.clear();
                     }
 
@@ -196,7 +201,7 @@ public class LogService {
 
             // Save any remaining batch
             if (!batchDocuments.isEmpty()) {
-                saveBulk(batchDocuments);
+                saveBulk(batchDocuments, indexName);
             }
 
             return logEntries;
@@ -224,12 +229,21 @@ public class LogService {
         }, executor);
     }
 
-    private void saveBulk(List<LogEntryDocument> batchDocuments) {
+    private void saveBulk(List<LogEntryDocument> batchDocuments, String indexName) {
         try {
-            logEntryElasticsearchRepository.saveAll(batchDocuments);
+            IndexCoordinates indexCoordinates = IndexCoordinates.of(indexName);
+            elasticsearchTemplate.save(batchDocuments, indexCoordinates);
+            logger.info("Saved {} logs to Elasticsearch index: {}", batchDocuments.size(), indexName);
         } catch (Exception e) {
             logger.error("Failed to save batch to Elasticsearch", e);
             // Optionally, log the failed batch for later retry
+        }
+    }
+
+    private void ensureIndexExists(String indexName) {
+        if (!elasticsearchTemplate.indexOps(IndexCoordinates.of(indexName)).exists()) {
+            elasticsearchTemplate.indexOps(IndexCoordinates.of(indexName)).create();
+            logger.info("Created index: {}", indexName);
         }
     }
 

@@ -56,8 +56,8 @@ public class LogController {
 
     @PostMapping("/ingest-file")
     public ResponseEntity<List<LogEntryDTO>> ingestLogFile(@RequestParam("file") MultipartFile file,
-                                                           @RequestParam(required = false) Long patternId) {
-        return new ResponseEntity<>(logService.ingestLogFile(file, patternId), HttpStatus.OK);
+                                                           @RequestParam(required = false) Long patternId, @RequestParam String  indexName) {
+        return new ResponseEntity<>(logService.ingestLogFile(file, patternId, indexName), HttpStatus.OK);
     }
 
 }
