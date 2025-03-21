@@ -6,6 +6,7 @@ import com.poinciana.loganalyzer.service.LogParserService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.elasticsearch.client.elc.ElasticsearchTemplate;
@@ -14,8 +15,6 @@ import org.springframework.data.elasticsearch.core.query.IndexQuery;
 import org.springframework.data.elasticsearch.core.query.IndexQueryBuilder;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
-import org.springframework.kafka.support.KafkaHeaders;
-import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -77,16 +76,17 @@ public class KafkaLogConsumer {
             containerFactory = "kafkaListenerContainerFactory",
             concurrency = "${spring.kafka.consumer.concurrency}"
     )
-    public void consumeLogs(List<String> messages, @Header(KafkaHeaders.RECEIVED_TOPIC) String topic, Acknowledgment acknowledgment) {
-        String appName = topic.substring(orgId.length()+1);
-        String indexName = appName+"-logs";
-        for (String message : messages) {
-            processLogMessage(message, indexName);
+    public void consumeLogs(List<ConsumerRecord<String, String>> records, Acknowledgment acknowledgment) {
+        String topic = "";
+        for (ConsumerRecord<String, String> record : records) {
+            topic = record.topic();
+            String message = record.value();
+            processLogMessage(message, topic); // index name and topic name will be same
         }
 
-        // After processing all the messages in the batch, if there's an accumulated log entry, process it
+        // After processing all the records in the batch, if there's an accumulated log entry, process it
         if (!logBuffer.get().isEmpty()) {
-            parseAndQueueLog(logBuffer.get().toString(),indexName);
+            parseAndQueueLog(logBuffer.get().toString(),topic); // index name and topic name will be same
             logBuffer.set(new StringBuilder());  // Assigns a new empty StringBuilder
         }
 
@@ -98,7 +98,7 @@ public class KafkaLogConsumer {
             }
         }
 
-        // After processing all messages, acknowledge them
+        // After processing all records, acknowledge them
         acknowledgment.acknowledge();
     }
 
