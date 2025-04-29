@@ -1,13 +1,8 @@
 package com.poinciana.loganalyzer.service;
 
-import co.elastic.clients.elasticsearch.ElasticsearchClient;
-import co.elastic.clients.elasticsearch._types.aggregations.Aggregation;
-import co.elastic.clients.elasticsearch.core.SearchRequest;
-import co.elastic.clients.elasticsearch.core.SearchResponse;
 import com.poinciana.loganalyzer.entity.LogEntry;
 import com.poinciana.loganalyzer.entity.LogEntryDocument;
 import com.poinciana.loganalyzer.model.LogEntryDTO;
-import com.poinciana.loganalyzer.model.LogSearchResponseDTO;
 import com.poinciana.loganalyzer.repository.LogEntryElasticsearchRepository;
 import com.poinciana.loganalyzer.repository.LogEntryRepository;
 import lombok.RequiredArgsConstructor;
@@ -16,14 +11,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.elasticsearch.client.elc.ElasticsearchTemplate;
-import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
-import org.springframework.data.elasticsearch.core.SearchHit;
-import org.springframework.data.elasticsearch.core.SearchHits;
 import org.springframework.data.elasticsearch.core.mapping.IndexCoordinates;
-import org.springframework.data.elasticsearch.core.query.Criteria;
-import org.springframework.data.elasticsearch.core.query.CriteriaQuery;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -33,8 +22,9 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.time.LocalDateTime;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -57,11 +47,8 @@ public class LogService {
     private static final int THREAD_POOL_SIZE = Runtime.getRuntime().availableProcessors();
     private final ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
 
-
-    private final ElasticsearchOperations elasticsearchOperations;
     private final LogEntryRepository logEntryRepository;
     private final LogParserService logParserService;
-    private final ElasticsearchClient elasticsearchClient;
     private final ElasticsearchTemplate elasticsearchTemplate;
     private final ModelMapper modelMapper;
 
@@ -92,71 +79,6 @@ public class LogService {
         return logEntryDTO;
     }
 
-    public List<LogEntry> getAllLogs() {
-        return logEntryRepository.findAll();
-    }
-
-    public List<LogEntry> getFilteredLogs(String level, String serviceName, LocalDateTime startDate, LocalDateTime endDate) {
-        return logEntryRepository.findFilteredLogs(level, serviceName, startDate, endDate);
-    }
-
-    public LogSearchResponseDTO searchLogs(String level, String serviceName, String keyword,
-                                           LocalDateTime startDate, LocalDateTime endDate, int page, int size) {
-        Criteria criteria = new Criteria();
-
-        if (level != null) {
-            criteria.and(Criteria.where("level").is(level));
-        }
-        if (serviceName != null) {
-            criteria.and(Criteria.where("serviceName").is(serviceName));
-        }
-        if (keyword != null) {
-            criteria.and(Criteria.where("message").is(keyword));
-        }
-        if (startDate != null && endDate != null) {
-            criteria.and(Criteria.where("timestamp").between(startDate, endDate));
-        }
-
-        CriteriaQuery query = new CriteriaQuery(criteria).setPageable(PageRequest.of(page, size));
-        SearchHits<LogEntryDocument> searchHits = elasticsearchOperations.search(query, LogEntryDocument.class);
-
-        List<LogEntryDTO> logEntries = searchHits.getSearchHits().stream()
-                .map(SearchHit::getContent)
-                .map(log -> modelMapper.map(log, LogEntryDTO.class))
-                .collect(Collectors.toList());
-
-        return new LogSearchResponseDTO(logEntries, searchHits.getTotalHits());
-    }
-
-    public Map<String, Long> getLogCountByLevel() throws IOException {
-        return executeAggregationQuery("log_levels", "level.keyword");
-    }
-
-    public Map<String, Long> getLogCountByService() throws IOException {
-        return executeAggregationQuery("service_count", "serviceName.keyword");
-    }
-
-    public Map<String, Long> getLogCountByDate() throws IOException {
-        return executeAggregationQuery("log_by_date", "timestamp");
-    }
-
-    private Map<String, Long> executeAggregationQuery(String aggName, String fieldName) throws IOException {
-        SearchRequest searchRequest = SearchRequest.of(s -> s
-                .index("logs") // Use your Elasticsearch index
-                .size(0) // No need to fetch documents, just aggregation
-                .aggregations(aggName, Aggregation.of(a -> a
-                        .terms(t -> t.field(fieldName))
-                ))
-        );
-
-        SearchResponse<Void> response = elasticsearchClient.search(searchRequest, Void.class);
-
-        Map<String, Long> result = new HashMap<>();
-        var aggregation = response.aggregations().get(aggName).sterms().buckets().array();
-        aggregation.forEach(bucket -> result.put(bucket.key().stringValue(), bucket.docCount()));
-
-        return result;
-    }
     @Transactional
     public List<LogEntryDTO> ingestLogFile(MultipartFile file, Long patternId, String indexName) {
         List<CompletableFuture<LogEntryDTO>> futures = new ArrayList<>();
