@@ -164,8 +164,7 @@ public class LogService {
 
     private void ensureIndexExists(String indexName) {
         if (!elasticsearchTemplate.indexOps(IndexCoordinates.of(indexName)).exists()) {
-            elasticsearchTemplate.indexOps(IndexCoordinates.of(indexName)).create();
-            logger.info("Created index: {}", indexName);
+            logger.info("Index not exists: {}", indexName);
         }
     }
 
