@@ -69,9 +69,9 @@ public class KafkaConsumerConfig {
         // Using default truststore (cacerts)
 
         // SASL Configurations
-        properties.put("sasl.mechanism", "PLAIN"); // Or use SCRAM-SHA-256 if your broker supports it
+        properties.put("sasl.mechanism", System.getenv("KAFKA_SASL_ENABLED_MECHANISMS")); // Or use SCRAM-SHA-256 if your broker supports it
         properties.put("sasl.jaas.config",
-                "org.apache.kafka.common.security.plain.PlainLoginModule required " +
+                "org.apache.kafka.common.security.scram.ScramLoginModule required " +
                         "username=\""+ saslUsername +"\" password=\"" + saslPassword + "\";");
 
 

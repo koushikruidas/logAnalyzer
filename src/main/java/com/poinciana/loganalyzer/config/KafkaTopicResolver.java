@@ -31,11 +31,11 @@ public class KafkaTopicResolver {
         Map<String, Object> adminProps = new HashMap<>(kafkaAdmin.getConfigurationProperties());
 
         adminProps.put("security.protocol", securityProtocol);
-        adminProps.put("sasl.mechanism", "PLAIN");
+        adminProps.put("sasl.mechanism", System.getenv("KAFKA_SASL_ENABLED_MECHANISMS"));
 
         // Inject JAAS config inline
         adminProps.put("sasl.jaas.config",
-                "org.apache.kafka.common.security.plain.PlainLoginModule required " +
+                "org.apache.kafka.common.security.scram.ScramLoginModule required " +
                         "username=\"" + saslUsername + "\" password=\"" + saslPassword + "\";");
         try (AdminClient adminClient = AdminClient.create(adminProps)) {
             return adminClient.listTopics().names().get().stream()
