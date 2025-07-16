@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-@Component
+//@Component
 public class KafkaTopicResolver {
     @Value("${ORG_ID:logs}")
     private String orgId;

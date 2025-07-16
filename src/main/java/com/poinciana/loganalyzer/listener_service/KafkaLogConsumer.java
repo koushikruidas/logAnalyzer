@@ -27,18 +27,11 @@ import java.util.concurrent.atomic.AtomicReference;
 @Slf4j
 @Service
 public class KafkaLogConsumer {
-
     private final LogParserService logParserService;
     private final BlockingQueue<LogEntryDTO> logQueue;
     private final ScheduledExecutorService bulkProcessor;
     private final ModelMapper mapper;
     private final ElasticsearchTemplate elasticsearchTemplate;
-
-    @Value("${spring.kafka.consumer.enableHostLookup:false}")
-    private boolean enableHostLookup;
-
-    @Value("${ORG_ID:logs}")
-    private String orgId;
 
     // Buffer to store the current log message being accumulated
     private final AtomicReference<StringBuilder> logBuffer = new AtomicReference<>(new StringBuilder());
@@ -71,8 +64,8 @@ public class KafkaLogConsumer {
     }
 
     @KafkaListener(
-            topics = "#{@kafkaTopicResolver.getTopics()}", //Listens to all topics from an organization
-            groupId = "#{@kafkaGroupResolver.getGroupId()}",
+            topics = "${spring.kafka.consumer.topic}", //Listens to all topics from an organization
+            groupId = "${spring.kafka.consumer.groupId}",
             containerFactory = "kafkaListenerContainerFactory",
             concurrency = "${spring.kafka.consumer.concurrency}"
     )
