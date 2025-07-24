@@ -43,9 +43,6 @@ public class KafkaConsumerConfig {
     @Value("${spring.kafka.properties.sasl.password}")
     private String saslPassword;
 
-//    @Value("${spring.kafka.properties.sasl.mechanism}")
-//    private String saslMechanism;
-
     @Bean
     public Map<String, Object> kafkaListerConfig(){
         log.info("Inside kafkaListenerConfig()");
