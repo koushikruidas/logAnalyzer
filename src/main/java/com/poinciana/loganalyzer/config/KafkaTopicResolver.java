@@ -6,14 +6,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaAdmin;
 import org.springframework.stereotype.Component;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
-//@Component
+@Component
 public class KafkaTopicResolver {
-    @Value("${ORG_ID:logs}")
+    @Value("${ORG_ID}")
     private String orgId;
     @Value("${spring.kafka.properties.sasl.username}")
     private String saslUsername;
@@ -38,8 +36,12 @@ public class KafkaTopicResolver {
                 "org.apache.kafka.common.security.scram.ScramLoginModule required " +
                         "username=\"" + saslUsername + "\" password=\"" + saslPassword + "\";");
         try (AdminClient adminClient = AdminClient.create(adminProps)) {
+            Set<String> orgIds = Arrays.stream(orgId.split(","))
+                    .map(String::trim)
+                    .collect(Collectors.toSet());
+
             return adminClient.listTopics().names().get().stream()
-                    .filter(topic -> topic.startsWith(orgId + "_"))
+                    .filter(topic -> orgIds.stream().anyMatch(org -> topic.startsWith(org + "_")))
                     .collect(Collectors.toList());
         } catch (Exception e) {
             throw new RuntimeException("Failed to fetch topics", e);
