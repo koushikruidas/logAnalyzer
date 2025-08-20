@@ -3,6 +3,7 @@ package com.poinciana.loganalyzer.listener_service;
 import com.poinciana.loganalyzer.entity.LogEntryDocument;
 import com.poinciana.loganalyzer.model.LogEntryDTO;
 import com.poinciana.loganalyzer.service.LogParserService;
+import com.poinciana.loganalyzer.service.interfaces.TopicIndexMapService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -32,17 +33,20 @@ public class KafkaLogConsumer {
     private final ScheduledExecutorService bulkProcessor;
     private final ModelMapper mapper;
     private final ElasticsearchTemplate elasticsearchTemplate;
+    private final TopicIndexMapService topicIndexMapService;
 
     // Buffer to store the current log message being accumulated
     private final AtomicReference<StringBuilder> logBuffer = new AtomicReference<>(new StringBuilder());
 
 
-    public KafkaLogConsumer(LogParserService logParserService, ModelMapper mapper, ElasticsearchTemplate elasticsearchTemplate) {
+    public KafkaLogConsumer(LogParserService logParserService, ModelMapper mapper, ElasticsearchTemplate elasticsearchTemplate
+    , TopicIndexMapService topicIndexMapService) {
         this.logParserService = logParserService;
         this.mapper = mapper;
         this.elasticsearchTemplate = elasticsearchTemplate;
         this.logQueue = new LinkedBlockingQueue<>(100_000); // High-capacity queue
         this.bulkProcessor = Executors.newScheduledThreadPool(1);
+        this.topicIndexMapService = topicIndexMapService;
     }
 
     @PostConstruct
@@ -64,8 +68,9 @@ public class KafkaLogConsumer {
     }
 
     @KafkaListener(
-            topics = "${spring.kafka.consumer.topic}", //Listens to all topics from an organization
-            groupId = "${spring.kafka.consumer.groupId}",
+            id = "kafkaLogConsumer",
+            topics = "#{@kafkaTopicResolver.getTopics()}", //Listens to all topics from one/multiple organization
+//            groupId = "#{@kafkaGroupResolver.getGroupId()}",
             containerFactory = "kafkaListenerContainerFactory",
             concurrency = "${spring.kafka.consumer.concurrency}"
     )
@@ -74,7 +79,8 @@ public class KafkaLogConsumer {
         for (ConsumerRecord<String, String> record : records) {
             topic = record.topic();
             String message = record.value();
-            processLogMessage(message, topic); // index name and topic name will be same
+            String index = topicIndexMapService.resolveIndex(topic);
+            processLogMessage(message, index); // index name and topic name will be same
         }
 
         // After processing all the records in the batch, if there's an accumulated log entry, process it
