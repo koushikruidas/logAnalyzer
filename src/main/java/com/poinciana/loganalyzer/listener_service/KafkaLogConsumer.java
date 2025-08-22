@@ -67,13 +67,13 @@ public class KafkaLogConsumer {
         }
     }
 
-    @KafkaListener(
+    /*@KafkaListener(
             id = "kafkaLogConsumer",
             topics = "#{@kafkaTopicResolver.getTopics()}", //Listens to all topics from one/multiple organization
-//            groupId = "#{@kafkaGroupResolver.getGroupId()}",
+            groupId = "#{@kafkaGroupResolver.getGroupId()}",
             containerFactory = "kafkaListenerContainerFactory",
             concurrency = "${spring.kafka.consumer.concurrency}"
-    )
+    )*/
     public void consumeLogs(List<ConsumerRecord<String, String>> records, Acknowledgment acknowledgment) {
         String topic = "";
         for (ConsumerRecord<String, String> record : records) {
@@ -98,7 +98,9 @@ public class KafkaLogConsumer {
         }
 
         // After processing all records, acknowledge them
-        acknowledgment.acknowledge();
+        if (acknowledgment != null) {
+            acknowledgment.acknowledge();
+        }
     }
 
     // Process each log message line
