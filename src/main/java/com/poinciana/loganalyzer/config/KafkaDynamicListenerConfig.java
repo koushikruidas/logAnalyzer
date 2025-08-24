@@ -10,11 +10,18 @@ import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
 import org.springframework.kafka.listener.MessageListener;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 @Configuration
 @RequiredArgsConstructor
 public class KafkaDynamicListenerConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(KafkaDynamicListenerConfig.class);
 
     private final KafkaTopicResolver kafkaTopicResolver;
     private final KafkaGroupResolver kafkaGroupResolver;
@@ -23,6 +30,9 @@ public class KafkaDynamicListenerConfig {
 
     @PostConstruct
     public void registerDynamicListeners() {
+        // List to collect info about registered listeners for consolidated logging
+        List<String> listenerSummaries = new ArrayList<>();
+        int listenerCount = 0;
         for (String orgId : kafkaGroupResolver.getOrgIds()) {
             String groupId = kafkaGroupResolver.getGroupForOrg(orgId);
             List<String> topics = kafkaTopicResolver.getTopicsForOrg(orgId);
@@ -35,12 +45,48 @@ public class KafkaDynamicListenerConfig {
             ConcurrentMessageListenerContainer<String, String> container =
                     factory.createContainer(topics.toArray(new String[0]));
             container.getContainerProperties().setGroupId(groupId);
+
+            // --- MessageListener with automatic ack (default) ---
+            // Uncomment this block if you want auto-acknowledgment (Spring will commit offsets automatically)
+            // container.getContainerProperties().setMessageListener(
+            //         (MessageListener<String, String>) record -> {
+            //             kafkaLogConsumer.consumeLogs(List.of(record), null);
+            //         }
+            // );
+
+            // --- AcknowledgingMessageListener for manual ack ---
+            // Use this block if you want to manually acknowledge records
             container.getContainerProperties().setMessageListener(
-                    (MessageListener<String, String>) record -> {
-                        kafkaLogConsumer.consumeLogs(List.of(record), null);
+                    (org.springframework.kafka.listener.AcknowledgingMessageListener<String, String>) (record, acknowledgment) -> {
+                        kafkaLogConsumer.consumeLogs(List.of(record), acknowledgment);
                     }
             );
+
+            // Start the container
             container.start();
+            log.info("Kafka listener container started for orgId={}, groupId={}, topics={}", orgId, groupId, topics);
+
+            // Add a ConsumerRebalanceListener to log partition assignment
+            container.getContainerProperties().setConsumerRebalanceListener(new org.apache.kafka.clients.consumer.ConsumerRebalanceListener() {
+                @Override
+                public void onPartitionsRevoked(Collection<org.apache.kafka.common.TopicPartition> partitions) {
+                    log.info("Partitions revoked for orgId={}, groupId={}: {}", orgId, groupId, partitions);
+                }
+                @Override
+                public void onPartitionsAssigned(Collection<org.apache.kafka.common.TopicPartition> partitions) {
+                    log.info("Partitions assigned for orgId={}, groupId={}: {}", orgId, groupId, partitions);
+                }
+            });
+
+            // Collect info for consolidated log
+            listenerSummaries.add(String.format("orgId=%s, groupId=%s, topics=%s", orgId, groupId, topics));
+            listenerCount++;
+        }
+        // Consolidated log of all started listeners
+        if (!listenerSummaries.isEmpty()) {
+            log.info("Started {} Kafka listeners:\n{}", listenerCount, String.join("\n", listenerSummaries));
+        } else {
+            log.warn("No Kafka listeners started (no topics found for any orgId)");
         }
     }
 }

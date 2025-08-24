@@ -30,7 +30,7 @@ public class TopicIndexMapServiceImpl implements TopicIndexMapService {
             topicIndexMap.putAll(updatedMap);
         } catch (Exception e) {
             // Handle/log failure without crashing
-            log.warn("Failed to refresh topic-index map from logAdmin: {}", e.getMessage());
+            log.error("Failed to refresh topic-index map from logAdmin: {}", e.getMessage());
         }
     }
 

@@ -67,15 +67,9 @@ public class KafkaLogConsumer {
         }
     }
 
-    /*@KafkaListener(
-            id = "kafkaLogConsumer",
-            topics = "#{@kafkaTopicResolver.getTopics()}", //Listens to all topics from one/multiple organization
-            groupId = "#{@kafkaGroupResolver.getGroupId()}",
-            containerFactory = "kafkaListenerContainerFactory",
-            concurrency = "${spring.kafka.consumer.concurrency}"
-    )*/
     public void consumeLogs(List<ConsumerRecord<String, String>> records, Acknowledgment acknowledgment) {
         String topic = "";
+        log.info("[KafkaLogConsumer] Received {} records. Ack: {}", records.size(), acknowledgment != null);
         for (ConsumerRecord<String, String> record : records) {
             topic = record.topic();
             String message = record.value();

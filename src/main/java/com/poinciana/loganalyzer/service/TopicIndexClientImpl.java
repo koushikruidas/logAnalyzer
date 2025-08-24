@@ -33,6 +33,8 @@ public class TopicIndexClientImpl implements TopicIndexClient {
                 new ParameterizedTypeReference<>() {}
         );
         log.info("Fetched topic-index map from logAdmin: {}", response.getStatusCode());
-        return response.getBody() != null ? response.getBody() : new HashMap<>();
+        Map<String, String> map = response.getBody() != null ? response.getBody() : new HashMap<>();
+        log.debug("Topic-Index map content: {}", map);
+        return map;
     }
 }

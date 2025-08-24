@@ -22,8 +22,6 @@ import java.util.Map;
 @EnableKafka
 public class KafkaConsumerConfig {
 
-    @Value("${spring.kafka.consumer.groupId}")
-    private String groupId;
     @Value(("${spring.kafka.consumer.pollType}"))
     private String pollType;
     @Value("${spring.kafka.bootstrap-servers}")
@@ -46,7 +44,6 @@ public class KafkaConsumerConfig {
     @Bean
     public Map<String, Object> kafkaListerConfig(){
         log.info("Inside kafkaListenerConfig()");
-        log.info("group: "+groupId);
         log.info("PollType: "+pollType);
 
         Map<String, Object> properties = new HashMap<>();
