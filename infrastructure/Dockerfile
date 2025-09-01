@@ -9,16 +9,16 @@ RUN gradle build --no-daemon -x test
 FROM eclipse-temurin:17-jre-alpine
 
 # Copy the certificate into the runtime image
-COPY infrastructure/logpulse_server_ca.crt /tmp/logpulse_server_ca.crt
+COPY infrastructure/koushik-ca.crt /tmp/koushik-ca.crt
 
 # Add certificate to the JRE truststore
 RUN keytool -import \
       -alias kafka-server-ca \
-      -file /tmp/logpulse_server_ca.crt \
+      -file /tmp/koushik-ca.crt \
       -keystore $JAVA_HOME/lib/security/cacerts \
       -storepass changeit \
       -noprompt && \
-    rm /tmp/logpulse_server_ca.crt
+    rm /tmp/koushik-ca.crt
 
 # Set working directory
 WORKDIR /loganalyzer

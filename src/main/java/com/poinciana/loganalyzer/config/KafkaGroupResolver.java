@@ -19,6 +19,6 @@ public class KafkaGroupResolver {
     }
 
     public String getGroupForOrg(String orgId) {
-        return orgId + "_group";
+        return orgId + "_consumer_group";
     }
 }
