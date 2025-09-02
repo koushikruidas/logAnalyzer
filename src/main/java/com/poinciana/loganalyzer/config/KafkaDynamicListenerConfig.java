@@ -34,8 +34,11 @@ public class KafkaDynamicListenerConfig {
         List<String> listenerSummaries = new ArrayList<>();
         int listenerCount = 0;
         for (String orgId : kafkaGroupResolver.getOrgIds()) {
+            log.info("Setting up Kafka listener for orgId={}", orgId);
             String groupId = kafkaGroupResolver.getGroupForOrg(orgId);
+            log.info("Using groupId={}", groupId);
             List<String> topics = kafkaTopicResolver.getTopicsForOrg(orgId);
+            log.info("Subscribing to topics={} for orgId={}", topics, orgId);
             if (topics.isEmpty()) continue;
 
             ConcurrentKafkaListenerContainerFactory<String, String> factory = new ConcurrentKafkaListenerContainerFactory<>();
