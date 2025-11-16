@@ -5,7 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Map;
 
 @Data
@@ -17,7 +17,7 @@ public class LogEntryDTO {
     private String level;
     private String serviceName;
     private String message;
-    private LocalDateTime timestamp;
+    private Instant timestamp;
     private String exception;
     private String hostName;
     private String hostIp;
