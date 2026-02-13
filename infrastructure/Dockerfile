@@ -6,7 +6,7 @@ COPY .. .
 RUN gradle build --no-daemon -x test
 
 # Run stage
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:17-jre
 
 # Copy the certificate into the runtime image
 COPY infrastructure/koushik-ca.crt /tmp/koushik-ca.crt
@@ -27,7 +27,7 @@ WORKDIR /loganalyzer
 COPY --from=build /loganalyzer/build/libs/*.jar logAnalyzer.jar
 
 # Create a non-root user
-RUN adduser -D appuser && \
+RUN useradd -ms /bin/bash appuser && \
     chown -R appuser:appuser /loganalyzer
 USER appuser
 
